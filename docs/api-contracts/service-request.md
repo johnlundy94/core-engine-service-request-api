@@ -1,4 +1,4 @@
-# CoreEngine API Contract: ServiceRequests (v1)
+# CoreEngine API Contract: service-requests (v1)
 
 ## Purpose
 
@@ -55,8 +55,8 @@ All endpoints are versioned under `/v1`.
     "description": "This is the service description of the requested service"
   },
   "metadata": {
-    "source": "client_web",
-    "industryPack": "industry_pack_name"
+    "source": "client-web",
+    "industryPack": "industry-pack-name"
   }
 }
 ```
