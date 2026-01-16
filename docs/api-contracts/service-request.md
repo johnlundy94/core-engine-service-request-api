@@ -22,7 +22,8 @@ All endpoints are versioned under `/v1`.
 - `status` (string, default `"new"`)
 - Soft delete fields (set when deleted):
   - `deletedAt` (ISO-8601 UTC string)
-  - `purgeAt` (ISO-8601 UTC string, TTL-enabled attribute)
+  - `purgeAt` (number, Unix epoch seconds UTC, TTL-enabled attribute)
+  - `purgeAtIso` (ISO-8601 UTC string, optional, not TTL)
 
 ### Status values (v1)
 
@@ -40,10 +41,17 @@ A unique `serviceRequestId` alone does not prevent duplicates if the first write
 
 - Header `Idempotency-Key` is **required** on create.
 - Idempotency key scope: `(tenantId, Idempotency-Key)`
+- Idempotency table sort key attribute name: `idempotencyKey` (string)
+- `tenantId` is server-derived (for example from auth claims or API key mapping) and is not accepted from the public request body.
 - If the same key is reused:
   - Same request body: return the original success response, do not create a second record
   - Different request body: return `409 Conflict`
-- Idempotency record expiration: TTL on `expiresAt` (default 24 hours)
+- TTL note: DynamoDB TTL attributes must be Unix epoch seconds (number). ISO-8601 strings are not eligible for TTL expiration
+- TTL field types:
+  - `purgeAt` and `expiresAt` must be Number epoch seconds (UTC).
+  - `createdAt`, `deletedAt`, `purgeAtIso`, `expiresAtIso` are ISO-8601 UTC strings.
+- Idempotency record expiration: TTL on `expiresAt` (number, Unix epoch seconds UTC, default 24 hours)
+- Readability mirror: `expiresAtIso` (ISO-8601 UTC string, optional, not TTL)
 
 ---
 
@@ -135,7 +143,8 @@ The server performs a soft delete:
 
 - set `status = "deleted"`
 - set `deletedAt = <now>`
-- set `purgeAt = <now + retentionDays>` (TTL-enabled attribute)
+- set `purgeAt = unixEpochSecondsNow + (retentionDays * 86400) (TTL-enabled attribute)`
+- set `purgeAtIso = <ISO-8601 now + retentionDays> (not TTL)`
 
 Retention (v1 default): **90 days** (configurable later per tenant).
 
@@ -154,7 +163,7 @@ A ServiceRequest item stored in the service-requests table includes:
 - the submitted payload objects: `customer`, `service`, `serviceLocation`
 - soft delete retention fields when deleted (`deletedAt`, `purgeAt`)
 
-Example stored item shape:
+Example stored core-engine-dev-service-requests item shape (new):
 
 ```json
 {
@@ -183,6 +192,55 @@ Example stored item shape:
     "source": "client-web",
     "industryPack": "industry-pack-name"
   }
+}
+```
+
+Example stored item shape core-engine-dev-service-request (deleted):
+
+```json
+{
+  "tenantId": "t_123",
+  "serviceRequestId": "sr_01HQ9QZ7J2K6K8V8ZC1Y3M7T6R",
+  "createdAt": "2026-01-01T16:22:11Z",
+  "status": "deleted",
+  "deletedAt": "2026-01-10T18:05:00Z",
+  "purgeAt": 1778407500,
+  "purgeAtIso": "2026-04-10T18:05:00Z",
+  "customer": {
+    "name": "Jane Doe",
+    "phone": "+13035551212",
+    "email": "jane@email.com"
+  },
+  "serviceLocation": {
+    "address1": "123 Main St",
+    "city": "Denver",
+    "state": "CO",
+    "postalCode": "80202",
+    "country": "US"
+  },
+  "service": {
+    "description": "This is the service description of the requested service",
+    "budget": "1000-2500"
+  },
+  "metadata": { "source": "client-web", "industryPack": "industry-pack-name" }
+}
+```
+
+Example stored item shape core-engine-dev-service-request-idempotency:
+
+```json
+{
+  "tenantId": "t_123",
+  "idempotencyKey": "8f3d2c0a-6d3a-4c8a-9c1a-7c0d1a9f3c12",
+  "requestHash": "sha256:...",
+  "serviceRequestId": "sr_01HQ9QZ7J2K6K8V8ZC1Y3M7T6R",
+  "response": {
+    "serviceRequestId": "sr_01HQ9QZ7J2K6K8V8ZC1Y3M7T6R",
+    "createdAt": "2026-01-01T16:22:11Z",
+    "status": "new"
+  },
+  "expiresAt": 1767370931,
+  "expiresAtIso": "2026-01-02T16:22:11Z"
 }
 ```
 
